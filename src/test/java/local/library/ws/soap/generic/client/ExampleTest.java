@@ -73,7 +73,7 @@ public class ExampleTest {
         sayHi.getInput("text").setValue("Santa Clause");
 
         // get the results
-        List<SoapOutput> outs = new ArrayList<>(sayHi.execute("admin", "admin").values());
+        List<SoapOutput> outs = new ArrayList<>(sayHi.execute("admin", "admin", true).values());
         String outName = outs.get(0).getName();
         String outValue = outs.get(0).getValue();
         System.out.println("Output: ");

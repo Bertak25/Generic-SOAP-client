@@ -23,11 +23,7 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Properties;
+import java.util.*;
 
 import local.library.ws.soap.generic.client.util.MyUtils;
 import org.apache.log4j.LogManager;
@@ -93,8 +89,7 @@ public class SoapOperation {
                 outputs.put(current.getName(), output);
             }
         } else {
-            for (Object obj : current.getChildren()) {
-                Element child = (Element) obj;
+            for (Element child : current.getChildren()) {
                 parseSoap(child, soapType);
             }
         }
@@ -132,13 +127,17 @@ public class SoapOperation {
         return MyUtils.normalize(docu);
     }
 
+    public Map<String, SoapOutput> execute(boolean parse) throws IOException {
+        return execute("", "", parse);
+    }
+
     /**
      * Sends the currently set inputs to the service
      *
      * @return Received outputs
      * @throws IOException
      */
-    public Map<String, SoapOutput> execute(String user, String pass) throws IOException {
+    public Map<String, SoapOutput> execute(String user, String pass, boolean parse) throws IOException {
         try {
             String request = getRequest();
             Properties props = new Properties();
@@ -171,12 +170,14 @@ public class SoapOperation {
             wsdlResponse = submit.getResponse();
             soapResponse = wsdlResponse.getContentAsString();
 
-            InputStream soapStream = new ByteArrayInputStream(soapResponse.getBytes());
-            SAXBuilder parser = new SAXBuilder();
-            Document result = parser.build(soapStream);
+            if (parse) {
+                InputStream soapStream = new ByteArrayInputStream(soapResponse.getBytes());
+                SAXBuilder parser = new SAXBuilder();
+                Document result = parser.build(soapStream);
 
-            // create Output objects
-            parseSoap(result.getRootElement(), SOAP_RESPONSE);
+                // create Output objects
+                parseSoap(result.getRootElement(), SOAP_RESPONSE);
+            }
 
         } catch (SubmitException e) {
             throw new IOException("Problem while submitting the message.", e);
@@ -195,7 +196,7 @@ public class SoapOperation {
      */
     public String getRequest() throws IOException {
         Document request = MyUtils.toDocument(getDefaultRequest());
-        // todo: check if the content is empty
+
         Map<Element, List<Element>> additionalInputs = new HashMap<>();
         insertValues(request.getRootElement(), additionalInputs);
 
@@ -234,8 +235,8 @@ public class SoapOperation {
         return list;
     }
 
-    private void insertValues(Element current, Map<Element, List<Element>> additionalInputs) {
-        if (inputs.get(current.getName()) != null) {
+    private boolean insertValues(Element current, Map<Element, List<Element>> additionalInputs) {
+        if (inputs.get(current.getName()) != null && !inputs.get(current.getName()).getValue().equals("")) {
             SoapInput input = inputs.get(current.getName());
             String value = input.getValue();
             current.setText(value);
@@ -251,13 +252,21 @@ public class SoapOperation {
             if (clones.size() > 0) {
                 additionalInputs.put(current.getParentElement(), clones);
             }
-
-            // recursive checking of all children
+        } else if (inputs.containsKey(current.getName()) && current.getChildren().isEmpty()) {
+            return true;
         } else {
-            for (Object obj : current.getChildren()) {
-                Element child = (Element) obj;
-                insertValues(child, additionalInputs);
+            boolean keep = current.getChildren().isEmpty();
+            // recursive checking of all children
+            Iterator<Element> iterator = current.getChildren().iterator();
+            while (iterator.hasNext()) {
+                if (insertValues(iterator.next(), additionalInputs))
+                    iterator.remove();
             }
+            // remove the element if all of its children have been removed
+            if (current.getChildren().isEmpty() && !keep && !(current.getParentElement().getName().equals("Body") ||
+                    current.getParentElement().getParentElement().getName().equals("Body")))
+                return true;
         }
+        return false;
     }
 }
